@@ -117,6 +117,20 @@ export interface ParseResult {
   error?: string;
 }
 
+export interface DpxqChessItem {
+  id: string;
+  year: number;
+  event: string;
+  redPlayer: string;
+  blackPlayer: string;
+  moves: string[];
+  rawMovesText: string;
+  title: string;
+  result: string;
+  open: string;
+  date: string;
+}
+
 // ==================== 辅助函数 ====================
 
 /**
@@ -592,5 +606,165 @@ if (typeof window === 'undefined') {
     printGameText(result.game);
   } else {
     console.error('解析失败:', result.error);
+  }
+}
+
+// ==================== 扩展解析方法 ====================
+
+export function parseXQFText(xqfRaw: string): ParseResult {
+  try {
+    const lines = xqfRaw.split('\n').map(l => l.trim());
+    
+    const getTag = (tag: string): string => {
+      const prefix = `[${tag}]`;
+      const line = lines.find(l => l.startsWith(prefix));
+      return line ? line.substring(prefix.length) : '';
+    };
+    
+    const event = getTag('Event');
+    const date = getTag('Date');
+    const red = getTag('Red');
+    const black = getTag('Black');
+    const result = getTag('Result');
+    const open = getTag('Opening');
+    
+    const movesStart = lines.findIndex(l => l === '[Moves]');
+    const movesEnd = lines.findIndex((l, i) => i > movesStart && l === '[/XQF]');
+    
+    const moveLines = movesStart >= 0 && movesEnd >= 0 
+      ? lines.slice(movesStart + 1, movesEnd) 
+      : [];
+    
+    const moves: ChessMove[] = [];
+    const moveTexts: { round: number; red: string; black: string }[] = [];
+    
+    for (const line of moveLines) {
+      const match = line.match(/^(\d+)\.\s*([^\s]+)\s*([^\s]*)/);
+      if (match) {
+        const round = parseInt(match[1], 10);
+        const redNotation = match[2];
+        const blackNotation = match[3] || '';
+        
+        moves.push({
+          from: { col: 0, row: 0 },
+          to: { col: 0, row: 0 },
+          piece: getPieceFromNotation(redNotation, true),
+          notation: redNotation,
+          isRed: true,
+        });
+        
+        if (blackNotation && blackNotation !== '-') {
+          moves.push({
+            from: { col: 0, row: 0 },
+            to: { col: 0, row: 0 },
+            piece: getPieceFromNotation(blackNotation, false),
+            notation: blackNotation,
+            isRed: false,
+          });
+        }
+        
+        moveTexts.push({ round, red: redNotation, black: blackNotation });
+      }
+    }
+    
+    const game: ChessGame = {
+      title: `${red} vs ${black}`,
+      red,
+      black,
+      result,
+      event,
+      open,
+      date,
+      timerule: '',
+      length: moveTexts.length,
+      moves,
+      initialBoard: copyBoard(STANDARD_INIT),
+      moveTexts,
+    };
+    
+    return { success: true, game };
+    
+  } catch (error) {
+    return { 
+      success: false, 
+      error: `XQF解析异常: ${error instanceof Error ? error.message : String(error)}` 
+    };
+  }
+}
+
+export function parseDpxqJson(chessJson: DpxqChessItem): ParseResult {
+  try {
+    const moves: ChessMove[] = [];
+    const moveTexts: { round: number; red: string; black: string }[] = [];
+    
+    for (let i = 0; i < chessJson.moves.length; i += 2) {
+      const round = Math.floor(i / 2) + 1;
+      const redNotation = chessJson.moves[i] || '';
+      const blackNotation = chessJson.moves[i + 1] || '';
+      
+      if (redNotation) {
+        moves.push({
+          from: { col: 0, row: 0 },
+          to: { col: 0, row: 0 },
+          piece: getPieceFromNotation(redNotation, true),
+          notation: redNotation,
+          isRed: true,
+        });
+      }
+      
+      if (blackNotation) {
+        moves.push({
+          from: { col: 0, row: 0 },
+          to: { col: 0, row: 0 },
+          piece: getPieceFromNotation(blackNotation, false),
+          notation: blackNotation,
+          isRed: false,
+        });
+      }
+      
+      moveTexts.push({ round, red: redNotation, black: blackNotation });
+    }
+    
+    const game: ChessGame = {
+      title: chessJson.title || `${chessJson.redPlayer} vs ${chessJson.blackPlayer}`,
+      red: chessJson.redPlayer,
+      black: chessJson.blackPlayer,
+      result: chessJson.result,
+      event: chessJson.event,
+      open: chessJson.open,
+      date: chessJson.date,
+      timerule: '',
+      length: moveTexts.length,
+      moves,
+      initialBoard: copyBoard(STANDARD_INIT),
+      moveTexts,
+    };
+    
+    return { success: true, game };
+    
+  } catch (error) {
+    return { 
+      success: false, 
+      error: `DpxqJson解析异常: ${error instanceof Error ? error.message : String(error)}` 
+    };
+  }
+}
+
+function getPieceFromNotation(notation: string, isRed: boolean): string {
+  const firstChar = notation.charAt(0);
+  
+  const redMap: Record<string, string> = {
+    '帅': 'K', '车': 'R', '马': 'N', '相': 'B', '仕': 'A', '炮': 'C', '兵': 'P'
+  };
+  
+  const blackMap: Record<string, string> = {
+    '将': 'k', '車': 'r', '馬': 'n', '象': 'b', '士': 'a', '砲': 'c', '卒': 'p',
+    '车': 'r', '马': 'n', '炮': 'c'
+  };
+  
+  if (isRed) {
+    return redMap[firstChar] || 'P';
+  } else {
+    return blackMap[firstChar] || 'p';
   }
 }

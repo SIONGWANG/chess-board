@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import ChessBoard from '@/components/ChessBoard';
 import ControlBar from '@/components/ControlBar';
 import MoveList from '@/components/MoveList';
+import ChessFileUpload from '@/components/ChessFileUpload';
 import {
   parseDhtmlXQ,
   getBoardAfterMoves,
@@ -9,6 +10,11 @@ import {
 } from '@/utils/chessParser';
 import html2canvas from 'html2canvas';
 import { Upload, FileText, X, Camera } from 'lucide-react';
+
+interface HomeProps {
+  game?: ChessGame | null;
+  onGameLoaded: (game: ChessGame) => void;
+}
 
 const DEFAULT_PGN = `[DhtmlXQ]
 [DhtmlXQ_ver]www_dpxq_com[/DhtmlXQ_ver]
@@ -48,27 +54,29 @@ const DEFAULT_PGN = `[DhtmlXQ]
 [DhtmlXQ_generator][/DhtmlXQ_generator]
 [/DhtmlXQ]`;
 
-export default function Home() {
+export default function Home({ game: initialGame, onGameLoaded }: HomeProps) {
   const [game, setGame] = useState<ChessGame | null>(null);
   const [currentMoveIndex, setCurrentMoveIndex] = useState(-1);
   const [board, setBoard] = useState<(string | null)[][]>([]);
   const [showInput, setShowInput] = useState(false);
   const [pgnInput, setPgnInput] = useState('');
   const [parseError, setParseError] = useState('');
-  const [showScreenshotDialog, setShowScreenshotDialog] = useState(false);
   const [screenshotToast, setScreenshotToast] = useState('');
   const boardRef = useRef<HTMLDivElement>(null);
 
-  // 解析默认棋谱
   useEffect(() => {
-    const result = parseDhtmlXQ(DEFAULT_PGN);
-    if (result.success && result.game) {
-      setGame(result.game);
-      setBoard(result.game.initialBoard);
+    if (initialGame) {
+      setGame(initialGame);
+      setCurrentMoveIndex(-1);
+    } else {
+      const result = parseDhtmlXQ(DEFAULT_PGN);
+      if (result.success && result.game) {
+        setGame(result.game);
+        setBoard(result.game.initialBoard);
+      }
     }
-  }, []);
+  }, [initialGame]);
 
-  // 更新棋盘显示
   useEffect(() => {
     if (game) {
       const newBoard = getBoardAfterMoves(game.initialBoard, game.moves, currentMoveIndex);
@@ -76,10 +84,21 @@ export default function Home() {
     }
   }, [currentMoveIndex, game]);
 
-  // 最后一手棋
+  useEffect(() => {
+    const handleGameLoaded = (e: Event) => {
+      const detail = (e as CustomEvent<ChessGame>).detail;
+      if (detail) {
+        setGame(detail);
+        setCurrentMoveIndex(-1);
+      }
+    };
+
+    window.addEventListener('chessGameLoaded', handleGameLoaded);
+    return () => window.removeEventListener('chessGameLoaded', handleGameLoaded);
+  }, []);
+
   const lastMove = game?.moves[currentMoveIndex] || null;
 
-  // 控制函数
   const handleFirst = useCallback(() => {
     setCurrentMoveIndex(-1);
   }, []);
@@ -104,7 +123,6 @@ export default function Home() {
     setCurrentMoveIndex(index);
   }, []);
 
-  // 截图复制到剪贴板
   const handleScreenshot = useCallback(async () => {
     if (!boardRef.current) return;
 
@@ -127,7 +145,6 @@ export default function Home() {
           setTimeout(() => setScreenshotToast(''), 2000);
         } catch (err) {
           console.error('复制到剪贴板失败:', err);
-          // 降级方案：在新窗口打开图片，用户可右键另存为
           try {
             const dataUrl = canvas.toDataURL('image/png');
             const w = window.open('');
@@ -152,7 +169,6 @@ export default function Home() {
     }
   }, []);
 
-  // 解析棋谱输入
   const handleParseInput = useCallback(() => {
     if (!pgnInput.trim()) {
       setParseError('请输入棋谱代码');
@@ -171,9 +187,13 @@ export default function Home() {
     }
   }, [pgnInput]);
 
+  const handleFileGameLoaded = useCallback((loadedGame: ChessGame) => {
+    setGame(loadedGame);
+    setCurrentMoveIndex(-1);
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-stone-900">
-      {/* 顶部标题栏 */}
       <header className="bg-stone-900/80 backdrop-blur-sm border-b border-stone-700 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -182,28 +202,29 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-amber-400" style={{ fontFamily: 'KaiTi, STKaiti, SimKai, serif' }}>
-                象棋棋谱展示工具
+                棋谱解析
               </h1>
               {game && game.title && (
                 <p className="text-sm text-stone-400 mt-0.5">{game.title}</p>
               )}
             </div>
           </div>
-          <button
-            onClick={() => { setShowInput(true); setParseError(''); setPgnInput(''); }}
-            className="flex items-center gap-2 px-5 py-2.5 bg-amber-700 hover:bg-amber-600 text-white rounded-lg transition-all shadow-md hover:shadow-lg active:scale-95"
-          >
-            <Upload size={18} />
-            <span className="text-sm font-medium">粘贴棋谱</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <ChessFileUpload onGameLoaded={handleFileGameLoaded} />
+            <button
+              onClick={() => { setShowInput(true); setParseError(''); setPgnInput(''); }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-amber-700 hover:bg-amber-600 text-white rounded-lg transition-all shadow-md hover:shadow-lg active:scale-95"
+            >
+              <Upload size={18} />
+              <span className="text-sm font-medium">粘贴棋谱</span>
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* 棋谱导入弹窗 */}
       {showInput && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-stone-800 rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-stone-700">
-            {/* 弹窗头部 */}
             <div className="px-6 py-4 border-b border-stone-700 flex items-center justify-between bg-stone-800/50">
               <h2 className="text-lg font-bold text-amber-400" style={{ fontFamily: 'KaiTi, STKaiti, SimKai, serif' }}>
                 导入棋谱
@@ -215,7 +236,6 @@ export default function Home() {
                 <X size={20} />
               </button>
             </div>
-            {/* 弹窗内容 */}
             <div className="p-6">
               <p className="text-sm text-stone-400 mb-3">
                 请粘贴 DhtmlXQ 格式的棋谱代码（以 [DhtmlXQ] 开头，以 [/DhtmlXQ] 结尾）
@@ -235,7 +255,6 @@ export default function Home() {
                 <p className="mt-2 text-sm text-red-400">{parseError}</p>
               )}
             </div>
-            {/* 弹窗底部 */}
             <div className="px-6 py-4 border-t border-stone-700 flex justify-end gap-3 bg-stone-800/30">
               <button
                 onClick={() => setShowInput(false)}
@@ -254,20 +273,16 @@ export default function Home() {
         </div>
       )}
 
-      {/* 截图成功提示 */}
       {screenshotToast && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-6 py-3 bg-stone-800/90 text-amber-400 rounded-xl shadow-lg border border-stone-700 text-sm font-medium">
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 px-6 py-3 bg-stone-800/90 text-amber-400 rounded-xl shadow-lg border border-stone-700 text-sm font-medium">
           {screenshotToast}
         </div>
       )}
 
-      {/* 主内容区 */}
       <main className="max-w-7xl mx-auto px-6 py-8">
         {game ? (
           <div className="grid grid-cols-1 lg:grid-cols-[auto_320px] gap-8 items-start justify-center">
-            {/* 左侧：棋盘和控制栏 */}
             <div className="flex flex-col items-center gap-6">
-              {/* 对局信息 */}
               <div className="w-full bg-stone-800/60 rounded-xl p-4 border border-stone-700">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3">
@@ -294,12 +309,10 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 棋盘 */}
               <div ref={boardRef} className="relative">
                 <ChessBoard board={board} lastMove={lastMove} />
               </div>
 
-              {/* 控制栏 */}
               <div className="w-full max-w-xl">
                 <ControlBar
                   onFirst={handleFirst}
@@ -314,7 +327,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 右侧：步数列表 */}
             <div className="h-[560px] w-full">
               <MoveList
                 moves={game.moves}
@@ -330,7 +342,7 @@ export default function Home() {
                 <FileText className="w-10 h-10 text-stone-600" />
               </div>
               <p className="text-stone-400 text-lg mb-2">暂无棋谱</p>
-              <p className="text-stone-500 text-sm mb-6">点击右上角"粘贴棋谱"按钮导入 DhtmlXQ 格式棋谱</p>
+              <p className="text-stone-500 text-sm mb-6">点击右上角"粘贴棋谱"或"上传棋谱文件"导入</p>
               <button
                 onClick={() => { setShowInput(true); setParseError(''); }}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-amber-700 hover:bg-amber-600 text-white rounded-lg transition-all shadow-md hover:shadow-lg"
