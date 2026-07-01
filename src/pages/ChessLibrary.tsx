@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Search, Filter, Star, Trash2, Download, Table2, Clock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Search, Filter, Star, Trash2, Download, Table2, Clock, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { parseDpxqJson, type ChessGame, type DpxqChessItem } from '@/utils/chessParser';
 
 export interface ChessIndexItem {
@@ -16,7 +17,10 @@ interface ChessLibraryProps {
   onGameLoaded: (game: ChessGame) => void;
 }
 
+const PAGE_SIZE = 50;
+
 export default function ChessLibrary({ onGameLoaded }: ChessLibraryProps) {
+  const navigate = useNavigate();
   const [indexData, setIndexData] = useState<ChessIndexItem[]>([]);
   const [filteredData, setFilteredData] = useState<ChessIndexItem[]>([]);
   const [searchText, setSearchText] = useState('');
@@ -25,6 +29,7 @@ export default function ChessLibrary({ onGameLoaded }: ChessLibraryProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     loadFavorites();
@@ -33,6 +38,7 @@ export default function ChessLibrary({ onGameLoaded }: ChessLibraryProps) {
 
   useEffect(() => {
     filterData();
+    setCurrentPage(1);
   }, [searchText, selectedYear]);
 
   const loadFavorites = () => {
@@ -97,6 +103,7 @@ export default function ChessLibrary({ onGameLoaded }: ChessLibraryProps) {
         const result = parseDpxqJson(gameData);
         if (result.success && result.game) {
           onGameLoaded(result.game);
+          navigate('/');
         } else {
           alert(`解析失败: ${result.error}`);
         }
@@ -155,6 +162,18 @@ export default function ChessLibrary({ onGameLoaded }: ChessLibraryProps) {
   };
 
   const years = [...new Set(indexData.map(item => item.year))].sort((a, b) => b - a);
+  
+  const totalPages = Math.ceil(filteredData.length / PAGE_SIZE);
+  const paginatedData = filteredData.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
+  
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-stone-900">
@@ -260,7 +279,7 @@ export default function ChessLibrary({ onGameLoaded }: ChessLibraryProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-700/50">
-                    {filteredData.map((item) => (
+                    {paginatedData.map((item) => (
                       <tr
                         key={item.id}
                         className={`cursor-pointer hover:bg-stone-700/50 transition-colors ${
@@ -316,9 +335,54 @@ export default function ChessLibrary({ onGameLoaded }: ChessLibraryProps) {
                 </table>
               </div>
               
-              {filteredData.length === 0 && (
+              {filteredData.length === 0 ? (
                 <div className="py-16 text-center">
                   <p className="text-stone-500">没有找到匹配的棋谱</p>
+                </div>
+              ) : (
+                <div className="bg-stone-800 border-t border-stone-700 px-6 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-stone-400">
+                      显示 {(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, filteredData.length)} 条，共 {filteredData.length} 条
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => goToPage(1)}
+                        disabled={currentPage === 1}
+                        className="p-2 rounded-lg border border-stone-600 text-stone-400 hover:text-amber-400 hover:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="首页"
+                      >
+                        <ChevronsLeft size={16} />
+                      </button>
+                      <button
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="p-2 rounded-lg border border-stone-600 text-stone-400 hover:text-amber-400 hover:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="上一页"
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <span className="px-3 py-2 bg-stone-700 text-amber-400 text-sm font-medium rounded-lg">
+                        {currentPage} / {totalPages}
+                      </span>
+                      <button
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="p-2 rounded-lg border border-stone-600 text-stone-400 hover:text-amber-400 hover:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="下一页"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                      <button
+                        onClick={() => goToPage(totalPages)}
+                        disabled={currentPage === totalPages}
+                        className="p-2 rounded-lg border border-stone-600 text-stone-400 hover:text-amber-400 hover:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="末页"
+                      >
+                        <ChevronsRight size={16} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

@@ -1,9 +1,9 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 import { fileURLToPath } from 'url';
-import iconv from 'iconv-lite';
+import * as iconv from 'iconv-lite';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -60,6 +60,51 @@ interface CrawlError {
   timestamp: number;
 }
 
+interface ProgressData {
+  completedYears: number[];
+  completedDates: Set<string>;
+  completedGameIds: Set<string>;
+  lastRunTimestamp: number;
+}
+
+interface CrawlOptions {
+  yearStart: number;
+  yearEnd: number;
+  concurrency: number;
+  delayMin: number;
+  delayMax: number;
+}
+
+const DEFAULT_OPTIONS: CrawlOptions = {
+  yearStart: 2000,
+  yearEnd: 2026,
+  concurrency: 1,
+  delayMin: 1500,
+  delayMax: 2500,
+};
+
+function parseArgs(): CrawlOptions {
+  const options = { ...DEFAULT_OPTIONS };
+  
+  for (let i = 2; i < process.argv.length; i++) {
+    const arg = process.argv[i];
+    
+    if (arg.startsWith('--year-start=')) {
+      options.yearStart = parseInt(arg.split('=')[1], 10);
+    } else if (arg.startsWith('--year-end=')) {
+      options.yearEnd = parseInt(arg.split('=')[1], 10);
+    } else if (arg.startsWith('--concurrency=')) {
+      options.concurrency = parseInt(arg.split('=')[1], 10);
+    } else if (arg.startsWith('--delay-min=')) {
+      options.delayMin = parseInt(arg.split('=')[1], 10);
+    } else if (arg.startsWith('--delay-max=')) {
+      options.delayMax = parseInt(arg.split('=')[1], 10);
+    }
+  }
+  
+  return options;
+}
+
 function delay(minMs: number, maxMs: number): Promise<void> {
   const ms = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -91,7 +136,7 @@ async function fetchHtml(url: string, maxRetries: number = 3): Promise<string> {
   throw new Error(`请求失败 (已重试${maxRetries}次): ${url} - ${lastError?.message}`);
 }
 
-async function fetchYearLinks(): Promise<number[]> {
+async function fetchYearLinks(options: CrawlOptions): Promise<number[]> {
   console.log('正在获取年份列表...');
   
   const url = `${SEARCH_URL}/date.asp?owner=m`;
@@ -107,13 +152,14 @@ async function fetchYearLinks(): Promise<number[]> {
     const yearMatch = text.match(/^(\d{4})$/);
     if (href && href.includes('year=') && yearMatch) {
       const year = parseInt(yearMatch[1], 10);
-      if (year >= 2000 && year <= 2026) {
+      if (year >= options.yearStart && year <= options.yearEnd) {
         years.push(year);
       }
     }
   });
   
-  console.log(`获取到 ${years.length} 个年份`);
+  years.sort((a, b) => a - b);
+  console.log(`获取到 ${years.length} 个年份 (${options.yearStart}-${options.yearEnd})`);
   return years;
 }
 
@@ -240,7 +286,7 @@ async function fetchGameIds(year: number, month: string, date: string): Promise<
       }
       
       page++;
-      await delay(800, 1500);
+      await delay(500, 800);
     } catch (error) {
       console.warn(`      获取棋谱列表失败: ${error}`);
       break;
@@ -412,6 +458,44 @@ function ensureDirs(): void {
   if (!fs.existsSync(XQF_DIR)) fs.mkdirSync(XQF_DIR, { recursive: true });
 }
 
+function loadProgress(): ProgressData {
+  const filePath = path.join(DATA_DIR, 'progress.json');
+  if (fs.existsSync(filePath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      return {
+        completedYears: data.completedYears || [],
+        completedDates: new Set(data.completedDates || []),
+        completedGameIds: new Set(data.completedGameIds || []),
+        lastRunTimestamp: data.lastRunTimestamp || 0,
+      };
+    } catch {
+      return {
+        completedYears: [],
+        completedDates: new Set(),
+        completedGameIds: new Set(),
+        lastRunTimestamp: 0,
+      };
+    }
+  }
+  return {
+    completedYears: [],
+    completedDates: new Set(),
+    completedGameIds: new Set(),
+    lastRunTimestamp: 0,
+  };
+}
+
+function saveProgress(progress: ProgressData): void {
+  const filePath = path.join(DATA_DIR, 'progress.json');
+  fs.writeFileSync(filePath, JSON.stringify({
+    completedYears: progress.completedYears,
+    completedDates: Array.from(progress.completedDates),
+    completedGameIds: Array.from(progress.completedGameIds),
+    lastRunTimestamp: Date.now(),
+  }, null, 2), 'utf-8');
+}
+
 function loadErrorLog(): CrawlError[] {
   const filePath = path.join(DATA_DIR, 'errorLog.json');
   if (fs.existsSync(filePath)) {
@@ -431,12 +515,29 @@ function saveErrorLog(errors: CrawlError[]): void {
 
 function saveYearData(year: number, items: DpxqChessItem[]): void {
   const filePath = path.join(RAW_DIR, `${year}.json`);
-  fs.writeFileSync(filePath, JSON.stringify(items, null, 2), 'utf-8');
+  
+  let existingItems: DpxqChessItem[] = [];
+  if (fs.existsSync(filePath)) {
+    try {
+      existingItems = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    } catch {
+      existingItems = [];
+    }
+  }
+  
+  const itemMap = new Map<string, DpxqChessItem>();
+  existingItems.forEach(item => itemMap.set(item.id, item));
+  items.forEach(item => itemMap.set(item.id, item));
+  
+  const allItems = Array.from(itemMap.values());
+  fs.writeFileSync(filePath, JSON.stringify(allItems, null, 2), 'utf-8');
   
   for (const item of items) {
     const xqfPath = path.join(XQF_DIR, `${item.id}.xqf`);
-    const xqfContent = generateXQF(item);
-    fs.writeFileSync(xqfPath, xqfContent, 'utf-8');
+    if (!fs.existsSync(xqfPath)) {
+      const xqfContent = generateXQF(item);
+      fs.writeFileSync(xqfPath, xqfContent, 'utf-8');
+    }
   }
   
   console.log(`    已保存 ${items.length} 局棋谱`);
@@ -476,22 +577,104 @@ function buildFullIndex(allGames: DpxqChessItem[]): ChessIndexItem[] {
   }));
 }
 
+class ConcurrentPool<T> {
+  private concurrency: number;
+  private running: number = 0;
+  private queue: (() => Promise<T>)[] = [];
+  private results: T[] = [];
+  private errors: Error[] = [];
+  
+  constructor(concurrency: number) {
+    this.concurrency = concurrency;
+  }
+  
+  async add(task: () => Promise<T>): Promise<void> {
+    this.queue.push(task);
+    await this.process();
+  }
+  
+  private async process(): Promise<void> {
+    while (this.running < this.concurrency && this.queue.length > 0) {
+      const task = this.queue.shift()!;
+      this.running++;
+      
+      try {
+        const result = await task();
+        this.results.push(result);
+      } catch (error) {
+        this.errors.push(error instanceof Error ? error : new Error(String(error)));
+      } finally {
+        this.running--;
+        await this.process();
+      }
+    }
+  }
+  
+  async wait(): Promise<T[]> {
+    while (this.running > 0 || this.queue.length > 0) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return this.results;
+  }
+  
+  getErrors(): Error[] {
+    return this.errors;
+  }
+}
+
+function formatTime(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  if (days > 0) {
+    return `${days}天${hours % 24}小时${minutes % 60}分`;
+  } else if (hours > 0) {
+    return `${hours}小时${minutes % 60}分${seconds % 60}秒`;
+  } else if (minutes > 0) {
+    return `${minutes}分${seconds % 60}秒`;
+  } else {
+    return `${seconds}秒`;
+  }
+}
+
 async function main(): Promise<void> {
+  const options = parseArgs();
+  
   console.log('='.repeat(60));
   console.log('东萍象棋网棋谱爬虫工具');
+  console.log('='.repeat(60));
+  console.log(`配置参数:`);
+  console.log(`  年份范围: ${options.yearStart} - ${options.yearEnd}`);
+  console.log(`  并发数: ${options.concurrency}`);
+  console.log(`  请求间隔: ${options.delayMin}-${options.delayMax}ms`);
   console.log('='.repeat(60));
   console.log('注意：本工具仅用于个人学习研究，禁止商用');
   console.log('='.repeat(60));
   
   ensureDirs();
   
+  const progress = loadProgress();
   const errors: CrawlError[] = loadErrorLog();
   const allGames: DpxqChessItem[] = [];
   
+  const startTime = Date.now();
+  let totalGamesCount = 0;
+  let completedGamesCount = 0;
+  
+  if (progress.completedYears.length > 0) {
+    console.log(`\n发现上次爬取进度，已完成 ${progress.completedYears.length} 个年份，${progress.completedDates.size} 个日期，${progress.completedGameIds.size} 个棋谱`);
+    console.log('将从上次中断处继续爬取...');
+  }
+  
   try {
-    const years = await fetchYearLinks();
+    const years = await fetchYearLinks(options);
     
-    for (const year of years) {
+    const filteredYears = years.filter(year => !progress.completedYears.includes(year));
+    console.log(`\n需要爬取的年份: ${filteredYears.join(', ')}`);
+    
+    for (const year of filteredYears) {
       console.log(`\n=== 开始爬取 ${year} 年棋谱 ===`);
       
       const months = await fetchMonthLinks(year);
@@ -501,21 +684,45 @@ async function main(): Promise<void> {
         console.log(`  处理 ${month}...`);
         
         const dates = await fetchDateLinks(year, month);
+        const filteredDates = dates.filter(date => !progress.completedDates.has(date));
         
-        for (const date of dates) {
+        if (filteredDates.length === 0) {
+          console.log(`    ${month} 的所有日期已爬取完成，跳过`);
+          continue;
+        }
+        
+        for (const date of filteredDates) {
           console.log(`    处理 ${date}...`);
           
           const gameList = await fetchGameIds(year, month, date);
-          console.log(`      ${date} 有 ${gameList.length} 局棋谱`);
+          const filteredGameList = gameList.filter(game => !progress.completedGameIds.has(game.id));
           
-          for (const gameItem of gameList) {
-            console.log(`        获取棋谱 ${gameItem.id}...`);
-            
-            try {
+          console.log(`      ${date} 有 ${gameList.length} 局棋谱，跳过 ${gameList.length - filteredGameList.length} 个已完成，待爬 ${filteredGameList.length} 个`);
+          
+          totalGamesCount += filteredGameList.length;
+          
+          const pool = new ConcurrentPool<DpxqChessItem | null>(options.concurrency);
+          
+          for (const gameItem of filteredGameList) {
+            pool.add(async () => {
+              await delay(options.delayMin, options.delayMax);
               const game = await fetchGameDetail(gameItem);
+              completedGamesCount++;
+              
+              const elapsed = Date.now() - startTime;
+              const avgTimePerGame = completedGamesCount > 0 ? elapsed / completedGamesCount : 0;
+              const remainingGames = totalGamesCount - completedGamesCount;
+              const estimatedRemaining = avgTimePerGame * remainingGames;
+              
+              const progressPercent = totalGamesCount > 0 
+                ? ((completedGamesCount / totalGamesCount) * 100).toFixed(1) 
+                : '0.0';
+              
+              process.stdout.write(`\r      进度: ${completedGamesCount}/${totalGamesCount} (${progressPercent}%) | 预计剩余: ${formatTime(estimatedRemaining)}`);
+              
               if (game) {
                 yearGames.push(game);
-                console.log(`          ✓ ${game.redPlayer} vs ${game.blackPlayer}`);
+                progress.completedGameIds.add(game.id);
               } else {
                 errors.push({
                   url: `${SEARCH_URL}/view.asp?owner=m&id=${gameItem.id}`,
@@ -524,16 +731,15 @@ async function main(): Promise<void> {
                 });
               }
               
-              await delay(1000, 1800);
-            } catch (error) {
-              console.warn(`          ✗ 获取失败: ${error}`);
-              errors.push({
-                url: `${SEARCH_URL}/view.asp?owner=m&id=${gameItem.id}`,
-                error: String(error),
-                timestamp: Date.now(),
-              });
-            }
+              return game;
+            });
           }
+          
+          await pool.wait();
+          progress.completedDates.add(date);
+          saveProgress(progress);
+          
+          console.log('');
         }
       }
       
@@ -541,13 +747,38 @@ async function main(): Promise<void> {
         saveYearData(year, yearGames);
         allGames.push(...yearGames);
       }
+      
+      progress.completedYears.push(year);
+      saveProgress(progress);
+      
+      console.log(`  ${year} 年爬取完成，共 ${yearGames.length} 局`);
+    }
+    
+    if (filteredYears.length === 0) {
+      console.log('\n所有年份已爬取完成！');
     }
     
     console.log('\n=== 构建全局索引 ===');
-    const index = buildFullIndex(allGames);
+    
+    const existingIndexPath = path.join(DATA_DIR, 'full_index.json');
+    let existingIndex: ChessIndexItem[] = [];
+    if (fs.existsSync(existingIndexPath)) {
+      try {
+        existingIndex = JSON.parse(fs.readFileSync(existingIndexPath, 'utf-8'));
+      } catch {
+        existingIndex = [];
+      }
+    }
+    
+    const newIndex = buildFullIndex(allGames);
+    const indexMap = new Map<string, ChessIndexItem>();
+    existingIndex.forEach(item => indexMap.set(item.id, item));
+    newIndex.forEach(item => indexMap.set(item.id, item));
+    
+    const finalIndex = Array.from(indexMap.values());
     fs.writeFileSync(
-      path.join(DATA_DIR, 'full_index.json'),
-      JSON.stringify(index, null, 2),
+      existingIndexPath,
+      JSON.stringify(finalIndex, null, 2),
       'utf-8'
     );
     
@@ -556,17 +787,21 @@ async function main(): Promise<void> {
       console.log(`\n⚠️  有 ${errors.length} 个棋谱爬取失败，已记录到 errorLog.json`);
     }
     
+    const totalTime = Date.now() - startTime;
+    
     console.log('\n'.repeat(2));
     console.log('='.repeat(60));
     console.log('爬取完成！');
     console.log(`总棋谱数: ${allGames.length}`);
     console.log(`失败数: ${errors.length}`);
+    console.log(`总耗时: ${formatTime(totalTime)}`);
     console.log(`数据目录: ${DATA_DIR}`);
     console.log('='.repeat(60));
     
   } catch (error) {
     console.error('\n爬取过程发生错误:', error);
     saveErrorLog(errors);
+    saveProgress(progress);
   }
 }
 

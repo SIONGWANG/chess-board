@@ -697,32 +697,74 @@ export function parseDpxqJson(chessJson: DpxqChessItem): ParseResult {
     const moves: ChessMove[] = [];
     const moveTexts: { round: number; red: string; black: string }[] = [];
     
-    for (let i = 0; i < chessJson.moves.length; i += 2) {
-      const round = Math.floor(i / 2) + 1;
-      const redNotation = chessJson.moves[i] || '';
-      const blackNotation = chessJson.moves[i + 1] || '';
+    const initialBoard = copyBoard(STANDARD_INIT);
+    let board = copyBoard(initialBoard);
+    
+    if (chessJson.rawMovesText) {
+      const positions = parseMovePositions(chessJson.rawMovesText, 0);
+      const stepCount = Math.floor(positions.length / 2);
       
-      if (redNotation) {
+      for (let stepIdx = 0; stepIdx < stepCount; stepIdx++) {
+        const from = positions[stepIdx * 2];
+        const to = positions[stepIdx * 2 + 1];
+        const isRed = stepIdx % 2 === 0;
+        const round = Math.floor(stepIdx / 2) + 1;
+        
+        const piece = board[from.row][from.col];
+        if (!piece) continue;
+        
+        const notation = generateNotation(board, from.col, from.row, to.col, to.row, isRed);
+        const captured = applyMove(board, from.col, from.row, to.col, to.row);
+        
         moves.push({
-          from: { col: 0, row: 0 },
-          to: { col: 0, row: 0 },
-          piece: getPieceFromNotation(redNotation, true),
-          notation: redNotation,
-          isRed: true,
+          from: { col: from.col, row: from.row },
+          to: { col: to.col, row: to.row },
+          piece,
+          notation,
+          isRed,
+          capturedPiece: captured
         });
+        
+        if (isRed) {
+          if (moveTexts.length < round) {
+            moveTexts.push({ round, red: notation, black: '' });
+          } else if (moveTexts[round - 1]) {
+            moveTexts[round - 1].red = notation;
+          }
+        } else {
+          if (moveTexts[round - 1]) {
+            moveTexts[round - 1].black = notation;
+          }
+        }
       }
-      
-      if (blackNotation) {
-        moves.push({
-          from: { col: 0, row: 0 },
-          to: { col: 0, row: 0 },
-          piece: getPieceFromNotation(blackNotation, false),
-          notation: blackNotation,
-          isRed: false,
-        });
+    } else {
+      for (let i = 0; i < chessJson.moves.length; i += 2) {
+        const round = Math.floor(i / 2) + 1;
+        const redNotation = chessJson.moves[i] || '';
+        const blackNotation = chessJson.moves[i + 1] || '';
+        
+        if (redNotation) {
+          moves.push({
+            from: { col: 0, row: 0 },
+            to: { col: 0, row: 0 },
+            piece: getPieceFromNotation(redNotation, true),
+            notation: redNotation,
+            isRed: true,
+          });
+        }
+        
+        if (blackNotation) {
+          moves.push({
+            from: { col: 0, row: 0 },
+            to: { col: 0, row: 0 },
+            piece: getPieceFromNotation(blackNotation, false),
+            notation: blackNotation,
+            isRed: false,
+          });
+        }
+        
+        moveTexts.push({ round, red: redNotation, black: blackNotation });
       }
-      
-      moveTexts.push({ round, red: redNotation, black: blackNotation });
     }
     
     const game: ChessGame = {
@@ -736,7 +778,7 @@ export function parseDpxqJson(chessJson: DpxqChessItem): ParseResult {
       timerule: '',
       length: moveTexts.length,
       moves,
-      initialBoard: copyBoard(STANDARD_INIT),
+      initialBoard,
       moveTexts,
     };
     

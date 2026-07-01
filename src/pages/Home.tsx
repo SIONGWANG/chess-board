@@ -14,6 +14,7 @@ import { Upload, FileText, X, Camera } from 'lucide-react';
 interface HomeProps {
   game?: ChessGame | null;
   onGameLoaded: (game: ChessGame) => void;
+  onClearGame?: () => void;
 }
 
 const DEFAULT_PGN = `[DhtmlXQ]
@@ -54,7 +55,7 @@ const DEFAULT_PGN = `[DhtmlXQ]
 [DhtmlXQ_generator][/DhtmlXQ_generator]
 [/DhtmlXQ]`;
 
-export default function Home({ game: initialGame, onGameLoaded }: HomeProps) {
+export default function Home({ game: initialGame, onGameLoaded, onClearGame }: HomeProps) {
   const [game, setGame] = useState<ChessGame | null>(null);
   const [currentMoveIndex, setCurrentMoveIndex] = useState(-1);
   const [board, setBoard] = useState<(string | null)[][]>([]);
@@ -68,6 +69,7 @@ export default function Home({ game: initialGame, onGameLoaded }: HomeProps) {
     if (initialGame) {
       setGame(initialGame);
       setCurrentMoveIndex(-1);
+      setBoard(initialGame.initialBoard);
     } else {
       const result = parseDhtmlXQ(DEFAULT_PGN);
       if (result.success && result.game) {
@@ -83,19 +85,6 @@ export default function Home({ game: initialGame, onGameLoaded }: HomeProps) {
       setBoard(newBoard);
     }
   }, [currentMoveIndex, game]);
-
-  useEffect(() => {
-    const handleGameLoaded = (e: Event) => {
-      const detail = (e as CustomEvent<ChessGame>).detail;
-      if (detail) {
-        setGame(detail);
-        setCurrentMoveIndex(-1);
-      }
-    };
-
-    window.addEventListener('chessGameLoaded', handleGameLoaded);
-    return () => window.removeEventListener('chessGameLoaded', handleGameLoaded);
-  }, []);
 
   const lastMove = game?.moves[currentMoveIndex] || null;
 
@@ -210,6 +199,15 @@ export default function Home({ game: initialGame, onGameLoaded }: HomeProps) {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {initialGame && onClearGame && (
+              <button
+                onClick={onClearGame}
+                className="flex items-center gap-2 px-4 py-2 bg-stone-700 hover:bg-stone-600 text-stone-300 rounded-lg transition-colors text-sm"
+              >
+                <X size={16} />
+                <span>清除棋谱</span>
+              </button>
+            )}
             <ChessFileUpload onGameLoaded={handleFileGameLoaded} />
             <button
               onClick={() => { setShowInput(true); setParseError(''); setPgnInput(''); }}

@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react';
 import type { ChessMove } from '@/utils/chessParser';
 
 interface MoveListProps {
@@ -11,6 +12,27 @@ export default function MoveList({
   currentMoveIndex,
   onMoveClick,
 }: MoveListProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const activeRowRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (activeRowRef.current && scrollRef.current) {
+      const row = activeRowRef.current;
+      const container = scrollRef.current;
+      
+      const containerTop = container.scrollTop;
+      const containerBottom = containerTop + container.clientHeight;
+      const rowTop = row.offsetTop;
+      const rowBottom = rowTop + row.clientHeight;
+      
+      if (rowTop < containerTop) {
+        container.scrollTop = rowTop - 10;
+      } else if (rowBottom > containerBottom) {
+        container.scrollTop = rowBottom - container.clientHeight + 10;
+      }
+    }
+  }, [currentMoveIndex]);
+
   if (moves.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-stone-500">
@@ -19,7 +41,6 @@ export default function MoveList({
     );
   }
 
-  // 将步数分组：红黑为一组
   const pairs: { idx: number; red?: ChessMove; black?: ChessMove }[] = [];
   for (let i = 0; i < moves.length; i += 2) {
     pairs.push({
@@ -29,12 +50,19 @@ export default function MoveList({
     });
   }
 
+  const getActiveRowRef = (pairIdx: number) => {
+    if (currentMoveIndex === (pairIdx - 1) * 2 || currentMoveIndex === (pairIdx - 1) * 2 + 1) {
+      return activeRowRef;
+    }
+    return null;
+  };
+
   return (
     <div className="h-full flex flex-col bg-stone-800/60 rounded-xl border border-stone-700 overflow-hidden">
       <div className="px-4 py-3 bg-stone-800 border-b border-stone-700">
         <h3 className="text-amber-400 font-bold text-sm">棋谱记录</h3>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="text-xs text-stone-400 grid grid-cols-[40px_1fr_1fr] gap-1 px-2 py-2 border-b border-stone-700/50">
           <div className="text-center">回合</div>
           <div className="text-red-400/70 text-center">红方</div>
@@ -43,6 +71,7 @@ export default function MoveList({
         {pairs.map((pair) => (
           <div
             key={pair.idx}
+            ref={getActiveRowRef(pair.idx)}
             className="grid grid-cols-[40px_1fr_1fr] gap-1 px-2 py-1.5 border-b border-stone-700/30 text-sm"
           >
             <div className="text-stone-500 text-center flex items-center justify-center">

@@ -149,6 +149,7 @@ export default function CrawlerTool() {
                   <h4 className="text-amber-400 font-medium text-sm mb-2">chess_data/</h4>
                   <ul className="text-stone-400 text-xs space-y-1">
                     <li>├─ full_index.json - 全局索引（棋谱库页面读取）</li>
+                    <li>├─ progress.json - 断点续传进度记录</li>
                     <li>├─ errorLog.json - 错误日志</li>
                     <li>├─ raw/ - 按年份拆分的棋谱JSON</li>
                     <li>└─ xqf/ - 标准XQF格式棋谱文件</li>
@@ -158,13 +159,62 @@ export default function CrawlerTool() {
                   <h4 className="text-amber-400 font-medium text-sm mb-2">爬取策略</h4>
                   <ul className="text-stone-400 text-xs space-y-1">
                     <li>✓ 模拟Chrome浏览器请求头</li>
-                    <li>✓ 单线程串行请求，避免封禁</li>
-                    <li>✓ 每次请求间隔1300-2200ms</li>
+                    <li>✓ 断点续传，中断后自动恢复</li>
+                    <li>✓ 支持并发请求（可配置）</li>
                     <li>✓ 自动重试失败链接</li>
+                    <li>✓ 实时进度显示</li>
                   </ul>
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <div className="mt-6 bg-stone-800/60 rounded-xl border border-stone-700 p-6">
+          <h2 className="text-lg font-bold text-stone-200 mb-4">命令行参数</h2>
+          <div className="space-y-3">
+            <div className="flex items-start gap-3">
+              <code className="px-2 py-1 bg-stone-900 rounded text-amber-400 text-xs font-mono flex-shrink-0">--year-start</code>
+              <div>
+                <p className="text-stone-300 text-sm">起始年份，默认: 2000</p>
+                <code className="text-stone-500 text-xs">npm run crawl -- --year-start=2020</code>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <code className="px-2 py-1 bg-stone-900 rounded text-amber-400 text-xs font-mono flex-shrink-0">--year-end</code>
+              <div>
+                <p className="text-stone-300 text-sm">结束年份，默认: 2026</p>
+                <code className="text-stone-500 text-xs">npm run crawl -- --year-end=2024</code>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <code className="px-2 py-1 bg-stone-900 rounded text-amber-400 text-xs font-mono flex-shrink-0">--concurrency</code>
+              <div>
+                <p className="text-stone-300 text-sm">并发请求数，默认: 1（建议1-3）</p>
+                <code className="text-stone-500 text-xs">npm run crawl -- --concurrency=2</code>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <code className="px-2 py-1 bg-stone-900 rounded text-amber-400 text-xs font-mono flex-shrink-0">--delay-min</code>
+              <div>
+                <p className="text-stone-300 text-sm">最小请求间隔(ms)，默认: 1500</p>
+                <code className="text-stone-500 text-xs">npm run crawl -- --delay-min=2000</code>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <code className="px-2 py-1 bg-stone-900 rounded text-amber-400 text-xs font-mono flex-shrink-0">--delay-max</code>
+              <div>
+                <p className="text-stone-300 text-sm">最大请求间隔(ms)，默认: 2500</p>
+                <code className="text-stone-500 text-xs">npm run crawl -- --delay-max=3000</code>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 p-4 bg-stone-900/50 rounded-lg">
+            <p className="text-stone-400 text-sm mb-2">常用命令示例：</p>
+            <code className="block px-2 py-1 bg-stone-900 rounded text-amber-400 text-xs font-mono mb-2">npm run crawl -- --year-start=2020 --year-end=2024</code>
+            <p className="text-stone-500 text-xs">仅爬取2020-2024年的棋谱</p>
+            <code className="block px-2 py-1 bg-stone-900 rounded text-amber-400 text-xs font-mono mt-2">npm run crawl -- --concurrency=2 --delay-min=2000</code>
+            <p className="text-stone-500 text-xs">提高并发至2，增加请求间隔</p>
           </div>
         </div>
 
