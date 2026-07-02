@@ -1,16 +1,23 @@
 import { useRef, useEffect } from 'react';
 import type { ChessMove } from '@/utils/chessParser';
+import type { BrilliantMove } from '@/utils/brilliantMoveAnalyzer';
+import { getBrilliantMoveTypeName } from '@/utils/brilliantMoveAnalyzer';
+import { Sparkles } from 'lucide-react';
 
 interface MoveListProps {
   moves: ChessMove[];
   currentMoveIndex: number;
   onMoveClick: (index: number) => void;
+  brilliantMoves?: BrilliantMove[];
+  onBrilliantMoveClick?: (moveIndex: number) => void;
 }
 
 export default function MoveList({
   moves,
   currentMoveIndex,
   onMoveClick,
+  brilliantMoves,
+  onBrilliantMoveClick,
 }: MoveListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRowRef = useRef<HTMLDivElement>(null);
@@ -62,6 +69,42 @@ export default function MoveList({
       <div className="px-4 py-3 bg-stone-800 border-b border-stone-700">
         <h3 className="text-amber-400 font-bold text-sm">棋谱记录</h3>
       </div>
+      
+      {/* 神之一手展示 */}
+      {brilliantMoves && brilliantMoves.length > 0 && (
+        <div className="px-4 py-3 bg-gradient-to-r from-amber-900/40 to-amber-800/20 border-b border-amber-700/50">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles size={16} className="text-amber-400" />
+            <span className="text-amber-400 font-bold text-sm">精彩着法 ({brilliantMoves.length})</span>
+          </div>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {brilliantMoves.map((bm, index) => (
+              <div
+                key={bm.moveIndex}
+                className="p-2 bg-stone-800/50 rounded-lg border border-stone-700/50"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs text-stone-300">
+                    第{bm.round}回合 · {bm.notation}
+                  </div>
+                  <div className="text-xs text-amber-400/70">
+                    {getBrilliantMoveTypeName(bm.type)}
+                  </div>
+                </div>
+                <div className="text-xs text-amber-300/80 mb-2">
+                  {bm.reason}
+                </div>
+                <button
+                  onClick={() => onBrilliantMoveClick?.(bm.moveIndex)}
+                  className="w-full px-3 py-1 bg-amber-700/50 hover:bg-amber-700 text-amber-100 rounded text-xs transition-colors"
+                >
+                  跳转查看
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="text-xs text-stone-400 grid grid-cols-[40px_1fr_1fr] gap-1 px-2 py-2 border-b border-stone-700/50">
           <div className="text-center">回合</div>

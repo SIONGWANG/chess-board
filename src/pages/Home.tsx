@@ -8,8 +8,9 @@ import {
   getBoardAfterMoves,
   type ChessGame,
 } from '@/utils/chessParser';
+import { analyzeBrilliantMoves, type BrilliantMove } from '@/utils/brilliantMoveAnalyzer';
 import html2canvas from 'html2canvas';
-import { Upload, FileText, X, Camera } from 'lucide-react';
+import { Upload, FileText, X, Camera, Sparkles } from 'lucide-react';
 
 interface HomeProps {
   game?: ChessGame | null;
@@ -63,6 +64,7 @@ export default function Home({ game: initialGame, onGameLoaded, onClearGame }: H
   const [pgnInput, setPgnInput] = useState('');
   const [parseError, setParseError] = useState('');
   const [screenshotToast, setScreenshotToast] = useState('');
+  const [brilliantMoves, setBrilliantMoves] = useState<BrilliantMove[]>([]);
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -70,11 +72,17 @@ export default function Home({ game: initialGame, onGameLoaded, onClearGame }: H
       setGame(initialGame);
       setCurrentMoveIndex(-1);
       setBoard(initialGame.initialBoard);
+      // 分析精彩着法
+      const brilliant = analyzeBrilliantMoves(initialGame);
+      setBrilliantMoves(brilliant);
     } else {
       const result = parseDhtmlXQ(DEFAULT_PGN);
       if (result.success && result.game) {
         setGame(result.game);
         setBoard(result.game.initialBoard);
+        // 分析精彩着法
+        const brilliant = analyzeBrilliantMoves(result.game);
+        setBrilliantMoves(brilliant);
       }
     }
   }, [initialGame]);
@@ -171,6 +179,9 @@ export default function Home({ game: initialGame, onGameLoaded, onClearGame }: H
       setShowInput(false);
       setPgnInput('');
       setParseError('');
+      // 分析精彩着法
+      const brilliant = analyzeBrilliantMoves(result.game);
+      setBrilliantMoves(brilliant);
     } else {
       setParseError(result.error || '棋谱解析失败，请检查DhtmlXQ格式是否正确');
     }
@@ -179,6 +190,9 @@ export default function Home({ game: initialGame, onGameLoaded, onClearGame }: H
   const handleFileGameLoaded = useCallback((loadedGame: ChessGame) => {
     setGame(loadedGame);
     setCurrentMoveIndex(-1);
+    // 分析精彩着法
+    const brilliant = analyzeBrilliantMoves(loadedGame);
+    setBrilliantMoves(brilliant);
   }, []);
 
   return (
@@ -330,6 +344,8 @@ export default function Home({ game: initialGame, onGameLoaded, onClearGame }: H
                 moves={game.moves}
                 currentMoveIndex={currentMoveIndex}
                 onMoveClick={handleMoveClick}
+                brilliantMoves={brilliantMoves}
+                onBrilliantMoveClick={handleMoveClick}
               />
             </div>
           </div>
